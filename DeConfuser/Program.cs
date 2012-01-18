@@ -40,8 +40,8 @@ namespace DeConfuser
             Console.WriteLine("This version of Mono.Cecil is modded by DragonHunter to do some evil shit");
 
             //hardcoded path atm...
-            string inputPath = @"F:\DeConfuser\ConfuseMe\bin\Debug\confused\ConfuseMe.exe";
-            string outputPath = @"F:\DeConfuser\ConfuseMe\bin\Debug\confused\ConfuseMe_clean.exe";
+            string inputPath = @"H:\DeConfuser\ConfuseMe\bin\Debug\confused\ConfuseMe.exe";
+            string outputPath = @"H:\DeConfuser\ConfuseMe\bin\Debug\confused\ConfuseMe_cleaned.exe";
 
             //load assembly
             AssemblyDefinition asm = AssemblyFactory.GetAssembly(inputPath);
@@ -63,7 +63,6 @@ namespace DeConfuser
             }
             Console.WriteLine("-------------------------------------------------------");
             #endregion
-
             #region String Decryptor
             StringDecrypter decrypter = new StringDecrypter();
             TypeDefinition DecryptType = null;
@@ -82,11 +81,100 @@ namespace DeConfuser
             }
             Console.WriteLine("-------------------------------------------------------");
             #endregion
+            #region Anti-Dump remover
+            AntiDump dump = new AntiDump();
+            TypeDefinition AntiDumpType = null;
+            MethodDefinition AntiDumpMethod = null;
+            if (dump.FindAntiDump(asm, ref AntiDumpType, ref AntiDumpMethod))
+            {
+                Console.WriteLine("[Anti-Dump] Anti-Dump detected, removing...");
+                dump.RemoveAntiDump(asm, AntiDumpType, AntiDumpMethod);
+                Console.WriteLine("[Anti-Dump] Removed anti-dump");
+            }
+            else
+            {
+                Console.WriteLine("This assembly is not protected with anti-dump");
+            }
+            Console.WriteLine("-------------------------------------------------------");
+            #endregion
+            #region Resource Decryptor
+            ResourceDecrypter resourceDecrypter = new ResourceDecrypter();
+            TypeDefinition ResourceType = null;
+            MethodDefinition ResourceMethod = null;
+            if (resourceDecrypter.FindMethod(asm, ref ResourceType, ref ResourceMethod))
+            {
+                Console.WriteLine("[Resource-Decrypter] Resource-Decrypter, decrypting");
+                resourceDecrypter.DecryptAllResources(asm, inputPath, ResourceType, ResourceMethod);
+            }
+            else
+            {
+                Console.WriteLine("This assembly is not protected with encrypted resources");
+            }
+            Console.WriteLine("-------------------------------------------------------");
+            #endregion
+
 
             AssemblyFactory.SaveAssembly(asm, outputPath);
             Console.WriteLine("File dumped to \"" + outputPath + "\"");
             Console.WriteLine("Thanks for using DeConfuser :)");
             Process.GetCurrentProcess().WaitForExit();
+        }
+        
+        public static bool ScanSignature(MethodDefinition m, OpCode[] Signature)
+        {
+            bool found = true;
+            for (int j = 0; j < m.Body.Instructions.Count && j < Signature.Length; j++)
+            {
+                if (m.Body.Instructions[j].OpCode != Signature[j])
+                {
+                    found = false;
+                    break;
+                }
+            }
+            return found;
+        }
+        public static bool ReadSigKey(MethodDefinition DecryptMethod, OpCode[] KeySig, ref int val)
+        {
+            object value = null;
+            bool ret = ReadSigKey(DecryptMethod, KeySig, ref value);
+            if (value != null)
+                val = Convert.ToInt32(value);
+            return ret;
+        }
+        public static bool ReadSigKey(MethodDefinition DecryptMethod, OpCode[] KeySig, ref string val)
+        {
+            object value = null;
+            bool ret = ReadSigKey(DecryptMethod, KeySig, ref value);
+            if (value != null)
+                val = value.ToString();
+            return ret;
+        }
+        public static bool ReadSigKey(MethodDefinition DecryptMethod, OpCode[] KeySig, ref object val)
+        {
+            int score = 0;
+            for (int i = 0; i < DecryptMethod.Body.Instructions.Count; i++)
+            {
+                if (DecryptMethod.Body.Instructions[i].OpCode == KeySig[score])
+                {
+                    score++;
+                    if (score == KeySig.Length)
+                    {
+                        if (DecryptMethod.Body.Instructions[i].Next != null)
+                        {
+                            if (DecryptMethod.Body.Instructions[i].Next.Operand != null)
+                            {
+                                val = DecryptMethod.Body.Instructions[i].Next.Operand;
+                                return true;
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    score = 0;
+                }
+            }
+            return false;
         }
     }
 }

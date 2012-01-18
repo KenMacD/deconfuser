@@ -347,6 +347,8 @@
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Removers\AntiDebug.cs" />
+    <Compile Include="Removers\AntiDump.cs" />
+    <Compile Include="Removers\ResourceDecrypter.cs" />
     <Compile Include="Removers\StringDecrypter.cs" />
   </ItemGroup>
   <ItemGroup>

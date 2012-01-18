@@ -42,11 +42,7 @@ namespace DeConfuser.Removers
             OpCodes.Stloc_0,
             OpCodes.Ldnull,
             OpCodes.Ceq,
-            OpCodes.Ldc_I4_0,
-            OpCodes.Ceq,
-            OpCodes.Stloc_S,
-            OpCodes.Ldloc_S,
-            OpCodes.Brtrue,
+
         };
 
         public StringDecrypter()
@@ -56,32 +52,25 @@ namespace DeConfuser.Removers
 
         public bool FindMethod(AssemblyDefinition asm, ref TypeDefinition DecryptType, ref MethodDefinition DecryptMethod)
         {
-            for (int i = 0; i < asm.MainModule.Types.Count; i++)
+            foreach(ModuleDefinition module in asm.Modules)
             {
-                //well since Confuser only dumps his AntiDebug in <Module> we only check there
-                if (asm.MainModule.Types[i].Name != "<Module>")
-                    continue;
-
-                foreach (MethodDefinition m in asm.MainModule.Types[i].Methods)
+                for (int i = 0; i < module.Types.Count; i++)
                 {
-                    if (!m.HasBody)
+                    //well since Confuser only dumps his AntiDebug in <Module> we only check there
+                    if (module.Types[i].Name != "<Module>")
                         continue;
 
-                    //lets scan signature
-                    bool found = true;
-                    for (int j = 0; j < m.Body.Instructions.Count && j < Signature.Length; j++)
+                    foreach (MethodDefinition m in module.Types[i].Methods)
                     {
-                        if (m.Body.Instructions[j].OpCode != Signature[j])
+                        if (!m.HasBody)
+                            continue;
+
+                        if (Program.ScanSignature(m, Signature))
                         {
-                            found = false;
-                            break;
+                            DecryptType = (TypeDefinition)m.DeclaringType;
+                            DecryptMethod = m;
+                            return true;
                         }
-                    }
-                    if (found)
-                    {
-                        DecryptType = (TypeDefinition)m.DeclaringType;
-                        DecryptMethod = m;
-                        return true;
                     }
                 }
             }
@@ -133,36 +122,6 @@ namespace DeConfuser.Removers
             return new byte[0];
         }
 
-        private bool ReadSigKey(MethodDefinition DecryptMethod, OpCode[] KeySig, ref int key)
-        {
-            int score = 0;
-            for (int i = 0; i < DecryptMethod.Body.Instructions.Count; i++)
-            {
-                if (DecryptMethod.Body.Instructions[i].OpCode == KeySig[score])
-                {
-                    score++;
-
-                    if (score == KeySig.Length)
-                    {
-                        if (DecryptMethod.Body.Instructions[i].Next != null)
-                        {
-                            if (DecryptMethod.Body.Instructions[i].Next.Operand != null)
-                            {
-                                object obj = DecryptMethod.Body.Instructions[i].Next.Operand;
-                                key = Convert.ToInt32(DecryptMethod.Body.Instructions[i].Next.Operand);
-                                return true;
-                            }
-                        }
-                    }
-                }
-                else
-                {
-                    score = 0;
-                }
-            }
-            return false;
-        }
-
         public void DecryptAllStrings(AssemblyDefinition asm, MethodDefinition DecryptMethod, byte[] StringData)
         {
             //this is for getting the key... just a signature would help us :3
@@ -209,8 +168,8 @@ namespace DeConfuser.Removers
             int key = 0;
             int NumKey = 0;
             int SeedKey = 0;
-            if (!ReadSigKey(DecryptMethod, KeySig, ref key) || !ReadSigKey(DecryptMethod, NumKeySig, ref NumKey) ||
-                !ReadSigKey(DecryptMethod, SeedKeySig, ref SeedKey))
+            if (!Program.ReadSigKey(DecryptMethod, KeySig, ref key) || !Program.ReadSigKey(DecryptMethod, NumKeySig, ref NumKey) ||
+                !Program.ReadSigKey(DecryptMethod, SeedKeySig, ref SeedKey))
             {
                 Console.WriteLine("One of the keys could not be found ;(!");
                 return;
@@ -234,15 +193,17 @@ namespace DeConfuser.Removers
                             {
                                 int id = Convert.ToInt32(m.Body.Instructions[i].Previous.Operand);
                                 int token = (int)m.MetadataToken.ToUInt();
-                                int DecryptKey = (token ^ id) - key; //key ? it looks more like a offset to me
+                                int Offset = (token ^ id) - key;
 
                                 //decrypt here
                                 string str = "";
                                 using (BinaryReader reader = new BinaryReader(new MemoryStream(StringData)))
                                 {
-                                    reader.BaseStream.Position = DecryptKey;
+                                    reader.BaseStream.Position = Offset;
                                     int num4 = ((int)~reader.ReadUInt32()) ^ NumKey;
                                     byte[] bytes = reader.ReadBytes(num4);
+                                    string crypted = ASCIIEncoding.ASCII.GetString(bytes);
+
                                     Random random = new Random(SeedKey);
                                     int num5 = 0;
                                     for (int j = 0; j < bytes.Length; j++)
@@ -252,7 +213,7 @@ namespace DeConfuser.Removers
                                         num5 += num7;
                                     }
                                     str = ASCIIEncoding.ASCII.GetString(bytes);
-                                    Console.WriteLine("[String Decryptor] Found key(" + DecryptKey.ToString("X6") + ") decrypted string: \"" + str + "\"");
+                                    Console.WriteLine("[String Decryptor] \"" + crypted + "\" -->> \"" + str + "\"");
                                 }
 
                                 //ok when it's all decrypted lets put the original string back
