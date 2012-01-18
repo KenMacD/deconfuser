@@ -20,6 +20,7 @@ along with DeConfuser. If not, see <http://www.gnu.org/licenses/>.
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Diagnostics;
 
 namespace ConfuseMe
 {
@@ -27,7 +28,10 @@ namespace ConfuseMe
     {
         static void Main(string[] args)
         {
+            int test = new StackFrame(1).GetMethod().MetadataToken;
             //just some dummy project to obfuscate this...
+            Console.WriteLine("oh my god a string D:");
+            Process.GetCurrentProcess().WaitForExit();
         }
     }
 }

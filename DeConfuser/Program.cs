@@ -24,6 +24,7 @@ using System.IO;
 using Mono.Cecil;
 using System.Diagnostics;
 using DeConfuser.Removers;
+using Mono.Cecil.Cil;
 
 namespace DeConfuser
 {
@@ -31,6 +32,7 @@ namespace DeConfuser
     {
         static void Main(string[] args)
         {
+            Console.Title = "DeConfuser - The De-Obfuscator for confuser v1.6";
             Console.WriteLine("Copyright © DragonHunter - 2012");
             Console.WriteLine("This deobfuscator might not work at every confused assembly, still BETA");
             Console.WriteLine("Checkout this project at http://deconfuser.codeplex.com");
@@ -41,16 +43,46 @@ namespace DeConfuser
             string inputPath = @"F:\DeConfuser\ConfuseMe\bin\Debug\confused\ConfuseMe.exe";
             string outputPath = @"F:\DeConfuser\ConfuseMe\bin\Debug\confused\ConfuseMe_clean.exe";
 
+            //load assembly
             AssemblyDefinition asm = AssemblyFactory.GetAssembly(inputPath);
-            AntiDebug debug = new AntiDebug();
 
+            #region Anti-Debug remover
+            AntiDebug debug = new AntiDebug();
             TypeDefinition AntiType = null;
             MethodDefinition AntiMethod = null;
-            if(debug.FindAntiDebug(asm, ref AntiType, ref AntiMethod))
+            Console.WriteLine("-------------------------------------------------------");
+            if (debug.FindAntiDebug(asm, ref AntiType, ref AntiMethod))
             {
-                Console.WriteLine("Anti-Debugging detected, removing...");
+                Console.WriteLine("[Anti-Debugger] Anti-Debugger detected, removing...");
                 debug.RemoveAntiDebug(asm, AntiType, AntiMethod);
+                Console.WriteLine("[Anti-Debugger] Removed anti-debugger");
             }
+            else
+            {
+                Console.WriteLine("This assembly is not protected with anti-debugging");
+            }
+            Console.WriteLine("-------------------------------------------------------");
+            #endregion
+
+            #region String Decryptor
+            StringDecrypter decrypter = new StringDecrypter();
+            TypeDefinition DecryptType = null;
+            MethodDefinition DecryptMethod = null;
+            if (decrypter.FindMethod(asm, ref DecryptType, ref DecryptMethod))
+            {
+                Console.WriteLine("[String Decryptor] Found string decryptor, decrypting strings...");
+                byte[] StringData = decrypter.GetStringResource(asm, inputPath, DecryptMethod);
+                decrypter.DecryptAllStrings(asm, DecryptMethod, StringData);
+                decrypter.RemoveDecryptMethod(asm, DecryptType, DecryptMethod);
+                Console.WriteLine("[String Decryptor] Removed the decrypt method");
+            }
+            else
+            {
+                Console.WriteLine("This assembly is not protected with encrypted strings");
+            }
+            Console.WriteLine("-------------------------------------------------------");
+            #endregion
+
             AssemblyFactory.SaveAssembly(asm, outputPath);
             Console.WriteLine("File dumped to \"" + outputPath + "\"");
             Console.WriteLine("Thanks for using DeConfuser :)");

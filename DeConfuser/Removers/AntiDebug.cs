@@ -48,7 +48,7 @@ namespace DeConfuser.Removers
         public bool FindAntiDebug(AssemblyDefinition asm, ref TypeDefinition AntiType, ref MethodDefinition AntiMethod)
         {
             //lets scan the whole assembly for anti-debugging
-            Console.WriteLine("Searching for Anti-Debugger");
+            Console.WriteLine("[Anti-Debugger] Searching for Anti-Debugger");
 
             for (int i = 0; i < asm.MainModule.Types.Count; i++)
             {
