@@ -133,6 +133,36 @@ namespace DeConfuser.Removers
             return new byte[0];
         }
 
+        private bool ReadSigKey(MethodDefinition DecryptMethod, OpCode[] KeySig, ref int key)
+        {
+            int score = 0;
+            for (int i = 0; i < DecryptMethod.Body.Instructions.Count; i++)
+            {
+                if (DecryptMethod.Body.Instructions[i].OpCode == KeySig[score])
+                {
+                    score++;
+
+                    if (score == KeySig.Length)
+                    {
+                        if (DecryptMethod.Body.Instructions[i].Next != null)
+                        {
+                            if (DecryptMethod.Body.Instructions[i].Next.Operand != null)
+                            {
+                                object obj = DecryptMethod.Body.Instructions[i].Next.Operand;
+                                key = Convert.ToInt32(DecryptMethod.Body.Instructions[i].Next.Operand);
+                                return true;
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    score = 0;
+                }
+            }
+            return false;
+        }
+
         public void DecryptAllStrings(AssemblyDefinition asm, MethodDefinition DecryptMethod, byte[] StringData)
         {
             //this is for getting the key... just a signature would help us :3
@@ -152,86 +182,83 @@ namespace DeConfuser.Removers
                 //key
                 //nop
             };
+            OpCode[] NumKeySig = new OpCode[]
+            {
+                OpCodes.Callvirt,
+                OpCodes.Ldloc_S,
+                OpCodes.Conv_I8,
+                OpCodes.Ldc_I4_0,
+                OpCodes.Callvirt,
+                OpCodes.Pop,
+                OpCodes.Ldloc_S,
+                OpCodes.Callvirt,
+                OpCodes.Not
+            };
+            OpCode[] SeedKeySig = new OpCode[]
+            {
+                OpCodes.Ldc_I4,
+                OpCodes.Xor,
+                OpCodes.Stloc_S,
+                OpCodes.Ldloc_S,
+                OpCodes.Ldloc_S,
+                OpCodes.Callvirt,
+                OpCodes.Stloc_S
+            };
 
             //yep my sucky signature seeker
             int key = 0;
-            int score = 0;
-            bool FoundKey = false;
-            for (int i = 0; i < DecryptMethod.Body.Instructions.Count; i++)
+            int NumKey = 0;
+            int SeedKey = 0;
+            if (!ReadSigKey(DecryptMethod, KeySig, ref key) || !ReadSigKey(DecryptMethod, NumKeySig, ref NumKey) ||
+                !ReadSigKey(DecryptMethod, SeedKeySig, ref SeedKey))
             {
-                if (DecryptMethod.Body.Instructions[i].OpCode == KeySig[score])
-                {
-                    score++;
-
-                    if (score == KeySig.Length)
-                    {
-                        if (DecryptMethod.Body.Instructions[i].Next != null)
-                        {
-                            if (DecryptMethod.Body.Instructions[i].Next.Operand != null)
-                            {
-                                object obj = DecryptMethod.Body.Instructions[i].Next.Operand;
-                                key = Convert.ToInt32(DecryptMethod.Body.Instructions[i].Next.Operand);
-                                FoundKey = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-                else
-                {
-                    score = 0;
-                }
+                Console.WriteLine("One of the keys could not be found ;(!");
+                return;
             }
 
-            if (!FoundKey)
+            //time to decrypt everything ;)
+            foreach (TypeDefinition t in asm.MainModule.Types)
             {
-                Console.WriteLine("Key not found ;(!");
-            }
-            else
-            {
-                //time to decrypt everything ;)
-                foreach (TypeDefinition t in asm.MainModule.Types)
+                foreach (MethodDefinition m in t.Methods)
                 {
-                    foreach (MethodDefinition m in t.Methods)
-                    {
-                        if (!m.HasBody)
-                            continue;
+                    if (!m.HasBody)
+                        continue;
 
-                        //lets look where our decrypt method is called
-                        for (int i = 0; i < m.Body.Instructions.Count; i++)
+                    //lets look where our decrypt method is called
+                    for (int i = 0; i < m.Body.Instructions.Count; i++)
+                    {
+                        if (m.Body.Instructions[i].Operand == DecryptMethod)
                         {
-                            if (m.Body.Instructions[i].Operand == DecryptMethod)
+                            //1 instruction before call is our ID-KEY
+                            if (m.Body.Instructions[i].Previous != null)
                             {
-                                //1 instruction before call is our ID-KEY
-                                if (m.Body.Instructions[i].Previous != null)
+                                int id = Convert.ToInt32(m.Body.Instructions[i].Previous.Operand);
+                                int token = (int)m.MetadataToken.ToUInt();
+                                int DecryptKey = (token ^ id) - key; //key ? it looks more like a offset to me
+
+                                //decrypt here
+                                string str = "";
+                                using (BinaryReader reader = new BinaryReader(new MemoryStream(StringData)))
                                 {
-                                    int id = Convert.ToInt32(m.Body.Instructions[i].Previous.Operand);
-                                    int token = (int)m.MetadataToken.ToUInt();
-                                    int DecryptKey = (token ^ id) - key;
-
-                                    //decrypt here
-                                    string str = "";
-                                    using (BinaryReader reader = new BinaryReader(new MemoryStream(StringData)))
+                                    reader.BaseStream.Position = DecryptKey;
+                                    int num4 = ((int)~reader.ReadUInt32()) ^ NumKey;
+                                    byte[] bytes = reader.ReadBytes(num4);
+                                    Random random = new Random(SeedKey);
+                                    int num5 = 0;
+                                    for (int j = 0; j < bytes.Length; j++)
                                     {
-                                        int num4 = ((int)~reader.ReadUInt32()) ^ 0x2b55252e;
-                                        byte[] bytes = reader.ReadBytes(num4);
-                                        Random random = new Random(0x297e42e9);
-                                        int num5 = 0;
-                                        for (int j = 0; j < bytes.Length; j++)
-                                        {
-                                            byte num7 = bytes[j];
-                                            bytes[j] = (byte) (bytes[j] ^ (random.Next() & num5));
-                                            num5 += num7;
-                                        }
-                                        str = ASCIIEncoding.ASCII.GetString(bytes);
-                                        Console.WriteLine("[String Decryptor] Found key(" + DecryptKey.ToString("X6") + ") decrypted string: \"" + str + "\"");
+                                        byte num7 = bytes[j];
+                                        bytes[j] = (byte) (bytes[j] ^ (random.Next() & num5));
+                                        num5 += num7;
                                     }
-
-                                    //ok when it's all decrypted lets put the original string back
-                                    m.Body.Instructions[i-1] = new Instruction(OpCodes.Ldstr, str);
-                                    m.Body.Instructions.RemoveAt(i);
-                                    i--;
+                                    str = ASCIIEncoding.ASCII.GetString(bytes);
+                                    Console.WriteLine("[String Decryptor] Found key(" + DecryptKey.ToString("X6") + ") decrypted string: \"" + str + "\"");
                                 }
+
+                                //ok when it's all decrypted lets put the original string back
+                                m.Body.Instructions[i-1] = new Instruction(OpCodes.Ldstr, str);
+                                m.Body.Instructions.RemoveAt(i);
+                                i--;
                             }
                         }
                     }

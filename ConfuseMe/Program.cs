@@ -28,9 +28,8 @@ namespace ConfuseMe
     {
         static void Main(string[] args)
         {
-            int test = new StackFrame(1).GetMethod().MetadataToken;
-            //just some dummy project to obfuscate this...
             Console.WriteLine("oh my god a string D:");
+            Console.WriteLine("OH snap... im decrypted");
             Process.GetCurrentProcess().WaitForExit();
         }
     }
